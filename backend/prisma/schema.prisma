@@ -1,0 +1,314 @@
+generator client {
+  provider        = "prisma-client"
+  output          = "../src/generated/prisma"
+  previewFeatures = ["partialIndexes"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model audit_log {
+  id          BigInt     @id @default(autoincrement())
+  occurred_at DateTime   @default(now()) @db.Timestamptz(6)
+  actor_type  actor_type
+  actor_ref   String?    @db.VarChar(100)
+  action      String     @db.VarChar(80)
+  entity_type String?    @db.VarChar(40)
+  entity_id   String?    @db.VarChar(100)
+  ip_address  String?    @db.Inet
+  user_agent  String?    @db.VarChar(300)
+  request_id  String?    @db.VarChar(100)
+  details     Json?
+
+  @@index([actor_type, actor_ref], map: "idx_audit_actor")
+  @@index([entity_type, entity_id], map: "idx_audit_entity")
+  @@index([occurred_at(sort: Desc)], map: "idx_audit_time")
+}
+
+model delivery_event_types {
+  code            String            @id @db.VarChar(60)
+  category        String            @db.VarChar(30)
+  description     String
+  delivery_events delivery_events[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model delivery_events {
+  id                   String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  incident_id          String               @db.Uuid
+  event_type           String               @db.VarChar(60)
+  actor_type           actor_type           @default(SYSTEM)
+  gateway_id           String?              @db.Uuid
+  device_ref           String?              @db.VarChar(100)
+  hop_number           Int?                 @db.SmallInt
+  occurred_at          DateTime             @default(now()) @db.Timestamptz(6)
+  device_reported_at   DateTime?            @db.Timestamptz(6)
+  request_id           String?              @db.VarChar(100)
+  details              Json?
+  delivery_event_types delivery_event_types @relation(fields: [event_type], references: [code], onDelete: NoAction, onUpdate: NoAction)
+  gateways             gateways?            @relation(fields: [gateway_id], references: [id], onUpdate: NoAction)
+  incidents            incidents            @relation(fields: [incident_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([incident_id, occurred_at], map: "idx_events_incident_time")
+  @@index([request_id], map: "idx_events_request", where: raw("(request_id IS NOT NULL)"))
+  @@index([event_type, occurred_at(sort: Desc)], map: "idx_events_type_time")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model emergency_contacts {
+  id                    String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  origin_device_id      String?                 @db.Uuid
+  label                 String?                 @db.VarChar(80)
+  phone_encrypted       Bytes
+  phone_hmac            String                  @unique(map: "uq_global_contact_hmac", where: raw("(origin_device_id IS NULL)")) @db.VarChar(128)
+  phone_last4           String?                 @db.VarChar(4)
+  is_test_contact       Boolean                 @default(true)
+  consent_given_at      DateTime?               @db.Timestamptz(6)
+  verified_at           DateTime?               @db.Timestamptz(6)
+  is_active             Boolean                 @default(true)
+  created_at            DateTime                @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime                @default(now()) @db.Timestamptz(6)
+  origin_devices        origin_devices?         @relation(fields: [origin_device_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  notification_attempts notification_attempts[]
+
+  @@unique([origin_device_id, phone_hmac], map: "uq_contact_per_device")
+  @@index([origin_device_id], map: "idx_contacts_device", where: raw("is_active"))
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model gateways {
+  id                  String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  gateway_code        String                @unique @db.VarChar(100)
+  display_name        String?               @db.VarChar(120)
+  status              gateway_status        @default(ACTIVE)
+  api_key_hash        String                @db.VarChar(128)
+  api_key_prefix      String?               @db.VarChar(12)
+  app_version         String?               @db.VarChar(40)
+  device_model        String?               @db.VarChar(80)
+  last_seen_at        DateTime?             @db.Timestamptz(6)
+  last_ip             String?               @db.Inet
+  notes               String?
+  registered_at       DateTime              @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime              @default(now()) @db.Timestamptz(6)
+  delivery_events     delivery_events[]
+  incident_relay_hops incident_relay_hops[]
+  incidents           incidents[]
+  ingestion_attempts  ingestion_attempts[]
+
+  @@index([status], map: "idx_gateways_status")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model incident_relay_hops {
+  id                     String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  incident_id            String    @db.Uuid
+  hop_number             Int       @db.SmallInt
+  relay_device_ref       String    @db.VarChar(100)
+  transport              String    @default("NEARBY_CONNECTIONS") @db.VarChar(40)
+  received_at            DateTime? @db.Timestamptz(6)
+  forwarded_at           DateTime? @db.Timestamptz(6)
+  reported_by_gateway_id String?   @db.Uuid
+  created_at             DateTime  @default(now()) @db.Timestamptz(6)
+  incidents              incidents @relation(fields: [incident_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  gateways               gateways? @relation(fields: [reported_by_gateway_id], references: [id], onUpdate: NoAction)
+
+  @@unique([incident_id, hop_number, relay_device_ref], map: "uq_hop")
+  @@index([incident_id, hop_number], map: "idx_hops_incident")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model incidents {
+  id                    String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  client_incident_id    String                  @unique @db.Uuid
+  origin_device_id      String                  @db.Uuid
+  gateway_id            String?                 @db.Uuid
+  incident_type         incident_type           @default(USER_INITIATED_SOS)
+  status                incident_status         @default(RECEIVED)
+  notification_status   notification_status     @default(PENDING)
+  is_demo               Boolean                 @default(false)
+  schema_version        Int                     @default(1) @db.SmallInt
+  origin_created_at     DateTime                @db.Timestamptz(6)
+  origin_expires_at     DateTime                @db.Timestamptz(6)
+  latitude              Decimal?                @db.Decimal(9, 6)
+  longitude             Decimal?                @db.Decimal(9, 6)
+  location_accuracy_m   Decimal?                @db.Decimal(8, 2)
+  location_captured_at  DateTime?               @db.Timestamptz(6)
+  battery_percent       Int?                    @db.SmallInt
+  hop_count             Int                     @default(0) @db.SmallInt
+  gateway_received_at   DateTime                @default(now()) @db.Timestamptz(6)
+  payload_size_bytes    Int?
+  payload_sha256        String?                 @db.Char(64)
+  closed_at             DateTime?               @db.Timestamptz(6)
+  failure_code          String?                 @db.VarChar(80)
+  created_at            DateTime                @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime                @default(now()) @db.Timestamptz(6)
+  delivery_events       delivery_events[]
+  incident_relay_hops   incident_relay_hops[]
+  gateways              gateways?               @relation(fields: [gateway_id], references: [id], onUpdate: NoAction)
+  origin_devices        origin_devices          @relation(fields: [origin_device_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  ingestion_attempts    ingestion_attempts[]
+  notification_attempts notification_attempts[]
+
+  @@index([gateway_id, gateway_received_at(sort: Desc)], map: "idx_incidents_gateway")
+  @@index([latitude, longitude], map: "idx_incidents_location", where: raw("(latitude IS NOT NULL)"))
+  @@index([origin_expires_at], map: "idx_incidents_open_expiry", where: raw("(status = ANY (ARRAY['RECEIVED'::incident_status, 'VALIDATED'::incident_status, 'NOTIFICATION_PENDING'::incident_status]))"))
+  @@index([origin_device_id, gateway_received_at(sort: Desc)], map: "idx_incidents_origin")
+  @@index([gateway_received_at(sort: Desc)], map: "idx_incidents_received_at")
+  @@index([status, gateway_received_at], map: "idx_incidents_status_received")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model ingestion_attempts {
+  id                 BigInt            @id @default(autoincrement())
+  gateway_id         String?           @db.Uuid
+  client_incident_id String?           @db.VarChar(80)
+  incident_id        String?           @db.Uuid
+  outcome            ingestion_outcome
+  error_code         String?           @db.VarChar(80)
+  payload_size_bytes Int?
+  request_id         String?           @db.VarChar(100)
+  ip_address         String?           @db.Inet
+  received_at        DateTime          @default(now()) @db.Timestamptz(6)
+  gateways           gateways?         @relation(fields: [gateway_id], references: [id], onUpdate: NoAction)
+  incidents          incidents?        @relation(fields: [incident_id], references: [id], onUpdate: NoAction)
+
+  @@index([client_incident_id], map: "idx_ingest_client_id")
+  @@index([gateway_id, received_at(sort: Desc)], map: "idx_ingest_gateway_time")
+  @@index([outcome, received_at(sort: Desc)], map: "idx_ingest_outcome_time")
+  @@index([received_at(sort: Desc)], map: "idx_ingest_received")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model notification_attempts {
+  id                     String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  incident_id            String                   @db.Uuid
+  contact_id             String?                  @db.Uuid
+  channel                notification_channel     @default(SMS)
+  attempt_number         Int                      @default(1)
+  status                 notification_status      @default(PENDING)
+  provider               String                   @db.VarChar(40)
+  provider_message_id    String?                  @unique @db.VarChar(160)
+  idempotency_key        String                   @unique @db.VarChar(160)
+  destination_hmac       String?                  @db.VarChar(128)
+  requested_by           actor_type               @default(SYSTEM)
+  is_manual_retry        Boolean                  @default(false)
+  attempted_at           DateTime                 @default(now()) @db.Timestamptz(6)
+  provider_accepted_at   DateTime?                @db.Timestamptz(6)
+  delivered_at           DateTime?                @db.Timestamptz(6)
+  failed_at              DateTime?                @db.Timestamptz(6)
+  error_code             String?                  @db.VarChar(80)
+  error_message          String?                  @db.VarChar(500)
+  created_at             DateTime                 @default(now()) @db.Timestamptz(6)
+  updated_at             DateTime                 @default(now()) @db.Timestamptz(6)
+  emergency_contacts     emergency_contacts?      @relation(fields: [contact_id], references: [id], onUpdate: NoAction)
+  incidents              incidents                @relation(fields: [incident_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  sms_provider_callbacks sms_provider_callbacks[]
+
+  @@unique([incident_id, contact_id, channel, attempt_number], map: "uq_attempt_number")
+  @@index([incident_id, attempted_at], map: "idx_notif_incident")
+  @@index([status, attempted_at], map: "idx_notif_status")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model origin_devices {
+  id                 String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  origin_id          String               @unique @db.VarChar(80)
+  first_seen_at      DateTime             @default(now()) @db.Timestamptz(6)
+  last_seen_at       DateTime             @default(now()) @db.Timestamptz(6)
+  incident_count     Int                  @default(0)
+  is_blocked         Boolean              @default(false)
+  blocked_reason     String?              @db.VarChar(300)
+  blocked_at         DateTime?            @db.Timestamptz(6)
+  created_at         DateTime             @default(now()) @db.Timestamptz(6)
+  emergency_contacts emergency_contacts[]
+  incidents          incidents[]
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model sms_provider_callbacks {
+  id                      String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  notification_attempt_id String?                @db.Uuid
+  provider                String                 @db.VarChar(40)
+  provider_message_id     String?                @db.VarChar(160)
+  reported_status         String?                @db.VarChar(40)
+  mapped_status           notification_status?
+  error_code              String?                @db.VarChar(80)
+  signature_valid         Boolean
+  raw_payload             Json?
+  received_at             DateTime               @default(now()) @db.Timestamptz(6)
+  processed_at            DateTime?              @db.Timestamptz(6)
+  notification_attempts   notification_attempts? @relation(fields: [notification_attempt_id], references: [id], onUpdate: NoAction)
+
+  @@index([notification_attempt_id], map: "idx_cb_attempt")
+  @@index([provider, provider_message_id], map: "idx_cb_message")
+  @@index([received_at(sort: Desc)], map: "idx_cb_received")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model system_settings {
+  key         String   @id @db.VarChar(80)
+  value       Json
+  description String?
+  updated_at  DateTime @default(now()) @db.Timestamptz(6)
+  updated_by  String?  @db.VarChar(100)
+}
+
+enum actor_type {
+  GATEWAY
+  OPERATOR
+  SYSTEM
+  PROVIDER
+}
+
+enum gateway_status {
+  ACTIVE
+  SUSPENDED
+  REVOKED
+}
+
+enum incident_status {
+  RECEIVED
+  VALIDATED
+  NOTIFICATION_PENDING
+  NOTIFICATION_REQUESTED
+  ACKNOWLEDGED
+  CLOSED
+  EXPIRED
+  FAILED
+}
+
+enum incident_type {
+  USER_INITIATED_SOS
+}
+
+enum ingestion_outcome {
+  ACCEPTED
+  DUPLICATE
+  REJECTED_MALFORMED
+  REJECTED_EXPIRED
+  REJECTED_OVERSIZE
+  REJECTED_UNSUPPORTED_VERSION
+  REJECTED_UNAUTHORIZED
+  REJECTED_RATE_LIMITED
+  REJECTED_BLOCKED_ORIGIN
+  ERROR_INTERNAL
+}
+
+enum notification_channel {
+  SMS
+}
+
+enum notification_status {
+  PENDING
+  ACCEPTED_BY_PROVIDER
+  DELIVERED
+  FAILED
+  UNKNOWN
+}

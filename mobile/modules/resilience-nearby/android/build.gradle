@@ -1,0 +1,25 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'expo.modules.resiliencenearby'
+version = '0.1.0'
+
+android {
+  namespace "expo.modules.resiliencenearby"
+  defaultConfig {
+    versionCode 1
+    versionName "0.1.0"
+  }
+  lintOptions {
+    abortOnError false
+  }
+}
+
+dependencies {
+  // Google Nearby Connections SDK — required for device discovery and data transfer.
+  // Verify the latest stable version at:
+  // https://developers.google.com/nearby/connections/android/get-started
+  implementation 'com.google.android.gms:play-services-nearby:19.3.0'
+}

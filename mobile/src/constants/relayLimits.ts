@@ -1,0 +1,11 @@
+export const RELAY_LIMITS = {
+  INCIDENT_EXPIRY_MS: 30 * 60 * 1000,        // 30 minutes
+  MAX_HOP_COUNT: 5,
+  MAX_PACKET_BYTES: 4 * 1024,                 // 4 KB
+  DUPLICATE_RETENTION_MS: 30 * 60 * 1000,    // at least as long as expiry
+  MAX_RETRY_ATTEMPTS: 5,
+  RETRY_BASE_DELAY_MS: 1_000,
+  RETRY_MAX_DELAY_MS: 30_000,
+  RETRY_JITTER_MS: 500,
+  MAX_CONCURRENT_TRANSFERS_PER_PEER: 1,
+} as const;

@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+dist/
+build/
+.expo/
+coverage/
+
+# Secrets — never commit real credentials
+.env
+.env.*
+!.env.example
+
+# Generated native build artifacts
+android/.gradle/
+android/app/build/
+ios/Pods/
+
+# IDE and OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Prisma
+backend/src/generated/
+
+# Logs
+*.log
